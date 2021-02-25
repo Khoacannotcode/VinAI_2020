@@ -8,15 +8,75 @@ import albumentations as A
 from matplotlib.patches import Rectangle
 from tqdm import tqdm
 import matplotlib.colors as mcolors
-import seaborn as sns
-import gc
 
 BB_PATH = '/home/mmlab/github/vinbigdata-xray/DrawBoundingBox'
 TRAIN_PATH = '/home/mmlab/github/vinbigdata-xray/VinBigData_Xray_DownSize/train/train'
 df_train = pd.read_csv('/home/mmlab/github/vinbigdata-xray/VinBigData_Xray_DownSize/train_downsampled.csv')
-int_2_str = {i:df_train[df_train["class_id"]==i].iloc[0]["class_name"] for i in range(15)}
 
-color = {
+def check_exist_folder(PATH):
+    # Check folder is exist
+    try:
+        os.mkdir(PATH)
+        print("{} is created".format(PATH.split("/")[-1]))
+    except:
+        if os.path.exists(PATH):
+            print("{} is exists".format(PATH.split("/")[-1]))
+
+def fusing_boxes(dataframe, class_id):
+    # filter on class_id
+    filtered_dataframe = dataframe.loc[dataframe.class_id == class_id,
+                                       ['image_id','x_min','y_min','x_max','y_max']]
+    # aggregate on image_id to average radiologists's estimations
+    return filtered_dataframe.groupby(['image_id']).mean()
+
+def get_rectangle_parameter(dataframe, index):
+    
+    "Adapt coordinates of bounding box for patch.Rectangle function"
+    
+    x_min = dataframe.loc[index, 'x_min']
+    y_min = dataframe.loc[index, 'y_min']
+    x_max = dataframe.loc[index, 'x_max']
+    y_max = dataframe.loc[index, 'y_max']
+    
+    anchor_point = (x_min, y_min)
+    height = y_max - y_min
+    width = x_max - x_min
+    
+    return anchor_point, height, width
+
+def select_imageid_from_each(dataframe):
+    
+    "For each class, returns 9 indexes and image paths"
+    
+    # Initialize dictionaries
+    class_id_index_examples, class_id_image_examples = {}, {}
+    image_ids_train_dataframe = list(df_train.image_id)
+    class_id_value_counts = df_train["class_id"].value_counts().sort_index()
+
+    # Loop over different classes
+    for class_id in range(len(class_id_value_counts.keys())):
+        fusing_boxes_dataframe = fusing_boxes(dataframe, class_id)
+        # image_id
+        fusing_box_indexes = fusing_boxes_dataframe.index
+        # Infer indexes
+        class_id_index_examples[str(class_id)] = [image_ids_train_dataframe.index(fusing_box_indexes[cid]) for cid in range(fusing_boxes_dataframe.shape[0])]
+        # Infer image paths
+        class_id_image_examples[str(class_id)] = fusing_box_indexes
+        
+    return class_id_index_examples, class_id_image_examples
+
+class_id_index_examples, class_id_image_examples = select_imageid_from_each(df_train)
+
+def draw_boundingbox(class_id, graph_indexes):
+    # Get files
+    files_index = class_id_index_examples[str(class_id)]
+    files_list = class_id_image_examples[str(class_id)]
+    
+    # Create folder by class id
+    check_exist_folder(os.path.join(BB_PATH, class_id))
+
+    # Color mapping to edge color of rectangle
+    color = {
         '0': 'r',
         '1': 'orangered',
         '2': 'yellow',
@@ -33,175 +93,37 @@ color = {
         '13': 'gold'
     }
 
-
-def check_exist_folder(PATH):
-    # Check folder is exist
-    try:
-        os.mkdir(PATH)
-        print("{} is created".format(PATH.split("/")[-1]))
-    except:
-        if os.path.exists(PATH):
-            print("{} is exists".format(PATH.split("/")[-1]))
-
-def draw_bboxes(img, tl, br, rgb, label="", label_location="tl", opacity=0.1, line_thickness=0):
-    rect = np.uint8(np.ones((br[1]-tl[1], br[0]-tl[0], 3))*rgb)
-    sub_combo = cv2.addWeighted(img[tl[1]:br[1],tl[0]:br[0],:], 1-opacity, rect, opacity, 1.0)    
-    img[tl[1]:br[1],tl[0]:br[0],:] = sub_combo
-
-    if line_thickness>0:
-        img = cv2.rectangle(img, tuple(tl), tuple(br), rgb, line_thickness)
+    # Draw bounding box
+    print('Draw bounding box on {} images'.format(len(graph_indexes)))
+    fig, ax = plt.subplots()
+    for graph_index in tqdm(graph_indexes):
         
-    if label:
-        # DEFAULTS
-        FONT = cv2.FONT_HERSHEY_SIMPLEX
-        FONT_SCALE = 1.666
-        FONT_THICKNESS = 3
-        FONT_LINE_TYPE = cv2.LINE_AA
+        full_filename = files_list[graph_index] + '.jpg'
+        img = plt.imread(os.path.join(TRAIN_PATH,
+                                  full_filename))
         
-        if type(label)==str:
-            LABEL = label.upper().replace(" ", "_")
-        else:
-            LABEL = f"CLASS_{label:02}"
+        ax.axis('off') 
+        ax.imshow(img, cmap=plt.get_cmap('gray'))
+                  
+        if str(class_id) != '14':
+            # Add rectangle
+            anchor_point, height, width = get_rectangle_parameter(df_train, 
+                                                                  files_index[graph_index])
+            rect = Rectangle(anchor_point, 
+                                     height, 
+                                     width, 
+                                     edgecolor=color[str(class_id)], 
+                                     facecolor="none")
+            ax.add_patch(rect)
         
-        text_width, text_height = cv2.getTextSize(LABEL, FONT, FONT_SCALE, FONT_THICKNESS)[0]
-        
-        label_origin = {"tl":tl, "br":br, "tr":(br[0],tl[1]), "bl":(tl[0],br[1])}[label_location]
-        label_offset = {
-            "tl":np.array([0, -10]), "br":np.array([-text_width, text_height+10]), 
-            "tr":np.array([-text_width, -10]), "bl":np.array([0, text_height+10])
-        }[label_location]
-        img = cv2.putText(img, LABEL, tuple(label_origin+label_offset), 
-                          FONT, FONT_SCALE, rgb, FONT_THICKNESS, FONT_LINE_TYPE)
-    
-    return img
-
-def plot_image(img, title="", figsize=(12,8), cmap=None):
-    """ Function to plot an image to save a bit of time """
-    plt.figure(figsize=figsize)
-    
-    if cmap:
-        plt.imshow(img, cmap=cmap)
-    else:
-        img
-        plt.imshow(img)
-        
-    plt.title(title, fontweight="bold")
-    plt.axis(False)
-    plt.show()
-
-class TrainData():
-    def __init__(self, df, train_dir, cmap="Spectral"):
-        # Initialize
-        self.df = df
-        self.train_dir = train_dir
-        
-        # Visualization
-        self.cmap = cmap
-        self.pal = [tuple([int(x) for x in np.array(c)*(255,255,255)]) for c in sns.color_palette(cmap, 15)]
-        self.pal.pop(8)
-        
-        # Store df components in individual numpy arrays for easy access based on index
-        tmp_numpy = self.df.to_numpy()
-        image_ids = tmp_numpy[0]
-        class_ids = tmp_numpy[1]
-        rad_ids = tmp_numpy[2]
-        bboxes = tmp_numpy[3:]
-        
-        self.img_annotations = self.get_annotations(get_all=True)
-        
-        # Clean-Up
-        del tmp_numpy; gc.collect();
-        
-        
-    def get_annotations(self, get_all=False, image_ids=None, class_ids=None, rad_ids=None, index=None):
-        """ TBD 
-        
-        Args:
-            get_all (bool, optional): TBD
-            image_ids (list of strs, optional): TBD
-            class_ids (list of ints, optional): TBD
-            rad_ids (list of strs, optional): TBD
-            index (int, optional):
-        
-        Returns:
-        
-        
-        """
-        if not get_all and image_ids is None and class_ids is None and rad_ids is None and index is None:
-            raise ValueError("Expected one of the following arguments to be passed:" \
-                             "\n\t\t– `get_all`, `image_id`, `class_id`, `rad_id`, or `index`")
-        # Initialize
-        tmp_df = self.df.copy()
-        
-        if not get_all:
-            if image_ids is not None:
-                tmp_df = tmp_df[tmp_df.image_id.isin(image_ids)]
-            if class_ids is not None:
-                tmp_df = tmp_df[tmp_df.class_id.isin(class_ids)]
-            if rad_ids is not None:
-                tmp_df = tmp_df[tmp_df.rad_id.isin(rad_ids)]
-            if index is not None:
-                tmp_df = tmp_df.iloc[index]
-            
-        annotations = {image_id:[] for image_id in tmp_df.image_id.to_list()}
-        for row in tmp_df.to_numpy():
-            
-            # Update annotations dictionary
-            annotations[row[0]].append(dict(
-                img_path=os.path.join(self.train_dir, row[0]+".dicom"),
-                image_id=row[0],
-                class_id=int(row[1]),
-                rad_id=int(row[2][1:]),
-            ))
-            
-            # Catch to convert float array to integer array
-            if row[1]==14:
-                annotations[row[0]][-1]["bbox"]=row[3:]
-            else:
-                annotations[row[0]][-1]["bbox"]=row[3:].astype(np.int32)
-        return annotations
-    
-    def get_annotated_image(self, image_id, annots=None, plot=False, plot_size=(18,25), plot_title=""):
-        if annots is None:
-            annots = self.img_annotations.copy()
-        
-        if type(annots) != list:
-            image_annots = annots[image_id]
-        else:
-            image_annots = annots
-            
-        img = cv2.cvtColor(cv2.imread(image_annots[0]["img_path"]),cv2.COLOR_GRAY2RGB)
-        for ann in image_annots:
-            if ann["class_id"] != 14:
-                img = draw_bboxes(img, 
-                                ann["bbox"][:2], ann["bbox"][-2:], 
-                                rgb=self.pal[ann["class_id"]], 
-                                label=int_2_str[ann["class_id"]], 
-                                opacity=0.01, line_thickness=4)
-        if plot:
-            plot_image(img, title=plot_title, figsize=plot_size)
-        
-        return img
-    
-        
-    def plot_classes(self, class_list, n=4, height_multiplier=6, verbose=True):
-        annotations = self.get_annotations(class_ids=class_list)
-        annotated_imgs = []
-
-        plt.figure(figsize=(20, height_multiplier*n))
-        for i, (image_id, annots) in enumerate(annotations.items()):
-            if i >= n:
-                break
-            if verbose:
-                print(f".", end="")
-            plt.subplot(n//2,2,i+1)
-            plt.imshow(self.get_annotated_image(image_id, annots))
-            plt.axis(False)
-            plt.title(f"Image ID – {image_id}")
-        plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-        plt.show()
+        plt.savefig(os.path.join(BB_PATH,class_id,full_filename) + '.jpg',dpi=300,transparent=True)
+        plt.cla()
+    print(f'Saved images in {class_id}')
 
 
 if __name__ == "__main__":
-    train_data = TrainData(df_train, TRAIN_PATH)
-    train_data.plot_classes(class_list=[7,], n=1, verbose=False)
+    for i in range(len(class_id_index_examples)):
+        # if len(os.listdir(BB_PATH + '/{}'.format(i))) == len(class_id_index_examples[str(i)]):
+        #     continue
+        # else:
+        draw_boundingbox(str(i),np.arange(len(class_id_index_examples[str(i)])))
