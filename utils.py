@@ -43,6 +43,7 @@ from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, CosineAnnealingL
 from torch.utils.data import Dataset, DataLoader, sampler
 import timm
 from efficientnet_pytorch import EfficientNet
+import glob
 
 pd.options.display.max_columns = None
 warnings.filterwarnings('ignore')
@@ -55,18 +56,45 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logger.info(device)
 
 
-SIZE = 2200
+SIZE = 1024
 IMG_SIZE = (SIZE, SIZE)
 ACCULATION = 1
 MOSAIC_RATIO = 0.4
+
+
+MAIN_PATH = '/home/VinBigData_ChestXray'
+CLASSIFIER_MAIN_PATH = os.path.join(MAIN_PATH, 'efficient_model', 'efficientnet')
+
+TRAIN_PATH = os.path.join(MAIN_PATH, 'anti_radConflict.csv')
+SUB_PATH = os.path.join(MAIN_PATH, 'sample_submission.csv')
+TRAIN_DICOM_PATH = os.path.join(MAIN_PATH, 'train')
+TEST_DICOM_PATH = os.path.join(MAIN_PATH, 'test')
+
+TRAIN_ORIGINAL_PATH = os.path.join(MAIN_PATH, 'train_jpg')
+TEST_ORIGINAL_PATH = os.path.join(MAIN_PATH, 'test_jpg')
+
+TRAIN_META_PATH = os.path.join(MAIN_PATH, 'train_meta.csv')
+TEST_META_PATH = os.path.join(MAIN_PATH, 'test_meta.csv')
+
+# TEST_CLASS_PATH = '../input/vinbigdata-2class-prediction/2-cls test pred.csv'
+MODEL_WEIGHT = os.path.join(CLASSIFIER_MAIN_PATH, 'tf_efficientdet_d7_53-6d1d7a95.pth')
+
+train_dicom_list = glob.glob(f'{TRAIN_DICOM_PATH}/*.dicom')
+test_dicom_list = glob.glob(f'{TEST_DICOM_PATH}/*.dicom')
+
+train_list = glob.glob(f'{TRAIN_ORIGINAL_PATH}/*.png')
+test_list = glob.glob(f'{TEST_ORIGINAL_PATH}/*.png')
+logger.info(f'Train have {len(train_list)} file and test have {len(test_list)}')
+
+
     
 class GlobalConfig:
     model_use = 'd5'
     model_weight = None
     img_size = IMG_SIZE
-    fold_num = 4
+    fold_num = 3
     seed = 89
-    num_workers = 12
+    num_workers = 0
     batch_size = 8
     n_epochs = 20
     lr = 1e-2
@@ -86,8 +114,8 @@ class GlobalConfig:
     
 class PredictConfig:
     img_size = IMG_SIZE
-    batch_size = 16
-    model_classifier_use = 'b0'
+    batch_size = 8
+    model_classifier_use = 'b5'
     weight_classifier = None
 #     weight_classifier = '../input/x-chest-1024-classifier/model_classifier.pth'
 

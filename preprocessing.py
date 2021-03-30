@@ -1,6 +1,6 @@
 from dataset_prepare import *
 
-def Preprocess_wbf(df, size=SIZE, iou_thr=0.5, skip_box_thr=0.0001):
+def Preprocess_wbf(df, size=2300, iou_thr=0.5, skip_box_thr=0.0001):
     list_image = []
     list_boxes = []
     list_cls = []
@@ -18,6 +18,8 @@ def Preprocess_wbf(df, size=SIZE, iou_thr=0.5, skip_box_thr=0.0001):
                                                       weights=None,
                                                       iou_thr=iou_thr,
                                                       skip_box_thr=skip_box_thr)
+        
+                                                    
         list_image.extend([image_id]*len(boxes))
         list_h.extend([h]*len(boxes))
         list_w.extend([w]*len(boxes))
@@ -96,7 +98,12 @@ if __name__ == '__main__':
     fold_csv = fold_csv.merge(size_df, on='image_id', how='left')
     print(fold_csv.head(10))
     train_abnormal = Preprocess_wbf(train_abnormal)
+    print(train_abnormal.columns)
     print(train_abnormal.head(10))
+    df_train = pd.read_csv(os.path.join(MAIN_PATH, 'train.csv'))
+    df_train = df_train[df_train.class_id==14]
+   # results = pd.concat([train_abnormal, df_train])
+  #  results.to_csv('/home/VinBigData_ChestXray/train_anti_confict_wbf.csv',index=False)
 
-    create_file(train_abnormal, fold_csv, '/home/VinBigData_ChestXray/yolo_data/yolov5', TRAIN_ORIGINAL_PATH, 3)
-    gc.collect()
+    # create_file(train_abnormal, fold_csv, '/home/VinBigData_ChestXray/yolo_data/yolov5', TRAIN_ORIGINAL_PATH, 3)
+    # gc.collect()
