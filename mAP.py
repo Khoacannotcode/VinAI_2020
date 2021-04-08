@@ -8,6 +8,8 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 from tqdm import tqdm
+import argparse
+import json
 
 
 class VinBigDataEval:
@@ -46,7 +48,7 @@ class VinBigDataEval:
                 "name": cat[0],
                 "supercategory": "none",
             })
-            
+ 
         return results
 
     def __gen_images(self, image_ids):
@@ -59,7 +61,7 @@ class VinBigDataEval:
             results.append({
                 "id": idx,
             })
-            
+        
         return results
     
     def __gen_annotations(self, df, image_ids):
@@ -89,7 +91,6 @@ class VinBigDataEval:
                 })
 
                 k += 1
-                
         return results
 
     def __decode_prediction_string(self, pred_str):
@@ -125,7 +126,7 @@ class VinBigDataEval:
                 })
 
                 k += 1
-                
+       
         return results
                 
     def evaluate(self, pred_df, n_imgs = -1, iou_thres=0.4):
@@ -171,13 +172,22 @@ class VinBigDataEval:
         return cocoEval
 
 if __name__ == "__main__":
-    df = pd.read_csv('/home/VinBigData_ChestXray/train_wbf_anti_conflict_ver2.csv')
-    df = df.groupby(by=['image_id', 'class_id']).first().reset_index()
-    vineval = VinBigDataEval(df)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root_dir", help="Directory of ground truth in .csv pascalVoc format or coco format", type=str)
+    parser.add_argument("--pred_dir", help="Directory of prediction path", type=str)
+    parser.add_argument("--iou_thres", help="IOU threshold", type=float)
+    args = parser.parse_args()
+
+    if args.root_dir.endswith(".json"):
+        # Will update in time
+    else:
+        df = pd.read_csv(args.root_dir)
+        df = df.groupby(by=['image_id', 'class_id']).first().reset_index()
+        vineval = VinBigDataEval(df)
 
     pred_df = df[["image_id"]]
     pred_df = pred_df.drop_duplicates()
     pred_df["PredictionString"] = "14 1.0 0 0 1 1"
     pred_df.reset_index(drop=True, inplace=True)
 
-    cocoEvalRes = vineval.evaluate(pred_df, iou_thres=0.5)
+    cocoEvalRes = vineval.evaluate(pred_df, iou_thres=args.iou_thres)
