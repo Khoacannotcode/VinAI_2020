@@ -48,7 +48,7 @@ class VinBigDataEval:
                 "name": cat[0],
                 "supercategory": "none",
             })
- 
+            
         return results
 
     def __gen_images(self, image_ids):
@@ -61,7 +61,7 @@ class VinBigDataEval:
             results.append({
                 "id": idx,
             })
-        
+            
         return results
     
     def __gen_annotations(self, df, image_ids):
@@ -91,6 +91,7 @@ class VinBigDataEval:
                 })
 
                 k += 1
+                
         return results
 
     def __decode_prediction_string(self, pred_str):
@@ -104,7 +105,7 @@ class VinBigDataEval:
         k = 0
         results = []
         
-        for i, row in df.iterrows():
+        for i, row in tqdm(df.iterrows()):
             
             image_id = row["image_id"]
             preds = self.__decode_prediction_string(row["PredictionString"])
@@ -126,7 +127,7 @@ class VinBigDataEval:
                 })
 
                 k += 1
-       
+                
         return results
                 
     def evaluate(self, pred_df, n_imgs = -1, iou_thres=0.4):
@@ -171,6 +172,53 @@ class VinBigDataEval:
         
         return cocoEval
 
+class VinBigDataEvalJson(VinBigDataEval):
+    def __init__(self, json_file):
+        self.json_file = json_file
+
+        self.image_ids = [imgs['file_name'].split('.')[0] for imgs in self.json_file['images']]
+        self.annotations = {
+            "type": "instances",
+            "images": [{"id": i} for i in range(len(self.json_file['images']))],
+            "categories": self.json_file['categories'],
+            "annotations": self.json_file['annotations']
+        }
+        
+        self.predictions = {
+            "images": self.annotations["images"].copy(),
+            "categories": self.annotations["categories"].copy(),
+            "annotations": None
+        }
+    
+    def evaluate(self, json_file_pred, n_imgs = -1, iou_thres=0.4):
+        self.predictions["annotations"] = json_file_pred['annotations']
+
+        coco_ds = COCO()
+        coco_ds.dataset = self.annotations
+        coco_ds.createIndex()
+        
+        coco_dt = COCO()
+        coco_dt.dataset = self.predictions
+        coco_dt.createIndex()
+        
+        imgIds = sorted(coco_ds.getImgIds())
+        
+        if n_imgs > 0:
+            imgIds = np.random.choice(imgIds, n_imgs)
+
+        cocoEval = COCOeval(coco_ds, coco_dt, 'bbox')
+        cocoEval.params.imgIds  = imgIds
+        cocoEval.params.useCats = True
+        cocoEval.params.iouType = "bbox"
+        cocoEval.params.iouThrs = np.array([iou_thres])
+
+        cocoEval.evaluate()
+        cocoEval.accumulate()
+        cocoEval.summarize()
+        
+        return cocoEval
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_dir", help="Directory of ground truth in .csv pascalVoc format or coco format", type=str)
@@ -179,15 +227,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.root_dir.endswith(".json"):
-        # Will update in time
+        with open(args.root_dir, 'r') as json_file:
+            data = json.load(json_file)
+        vineval = VinBigDataEvalJson(data)
     else:
         df = pd.read_csv(args.root_dir)
+        df.fillna(0, inplace=True)
+        df.loc[df["class_id"] == 14, ['x_max', 'y_max']] = 1.0
         df = df.groupby(by=['image_id', 'class_id']).first().reset_index()
         vineval = VinBigDataEval(df)
 
-    pred_df = df[["image_id"]]
-    pred_df = pred_df.drop_duplicates()
-    pred_df["PredictionString"] = "14 1.0 0 0 1 1"
-    pred_df.reset_index(drop=True, inplace=True)
 
-    cocoEvalRes = vineval.evaluate(pred_df, iou_thres=args.iou_thres)
+    if args.pred_dir.endswith(".json"):
+        with open(args.pred_dir, 'r') as json_file_pred:
+            data_pred = json.load(json_file_pred)
+        cocoEvalRes = vineval.evaluate(data_pred, iou_thres=args.iou_thres)
+    else:
+        pred_df = pd.read_csv(args.pred_dir)
+        pred_df = pred_df.drop_duplicates()
+        pred_df.reset_index(drop=True, inplace=True)
+        cocoEvalRes = vineval.evaluate(pred_df, iou_thres=args.iou_thres)
