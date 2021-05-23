@@ -14,16 +14,16 @@ torch.backends.cudnn.benchmark = True
 _logger = logging.getLogger('inference')
 
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Inference')
+parser = argparse.ArgumentParser(description='PyTorch Inference')
 parser.add_argument('-d', '--data', metavar='DIR',
                     help='path to dataset')
 parser.add_argument('--output_dir', metavar='DIR', default='./',
                     help='path to output files')
-parser.add_argument('--model', '-m', metavar='MODEL', default='dpn92',
-                    help='model architecture (default: dpn92)')
+parser.add_argument('--model', '-m', metavar='MODEL', default='tf_efficientnet_b7',
+                    help='model architecture (default: tf_efficientnet_b7)')
 parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
                     help='number of data loading workers (default: 2)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
+parser.add_argument('-b', '--batch_size', default=256, type=int,
                     metavar='N', help='mini-batch size (default: 256)')
 parser.add_argument('--img-size', default=None, type=int,
                     metavar='N', help='Input image dimension')
@@ -33,7 +33,7 @@ parser.add_argument('--std', type=float, nargs='+', default=None, metavar='STD',
                     help='Override std deviation of of dataset')
 parser.add_argument('--interpolation', default='', type=str, metavar='NAME',
                     help='Image resize interpolation type (overrides model)')
-parser.add_argument('--num-classes', type=int, default=1000,
+parser.add_argument('--num_classes', type=int, default=1000,
                     help='Number classes in dataset')
 parser.add_argument('--log-freq', default=10, type=int,
                     metavar='N', help='batch logging frequency (default: 10)')
@@ -41,37 +41,30 @@ parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
-parser.add_argument('--num-gpu', type=int, default=7,
+parser.add_argument('--num_gpu', type=int, default=7,
                     help='Number of GPUS to use')
 parser.add_argument('--no-test-pool', dest='no_test_pool', action='store_true',
                     help='disable test time pool')
 parser.add_argument('--topk', default=5, type=int,
                     metavar='N', help='Top-k to output to CSV')
 
-MAIN_PATH = '/home/VinBigData_ChestXray/data_classify/'
-INPUT_PATH = MAIN_PATH + '4_10_11_12_single_class_ver1_stage1_test_cropped/'
+args = parser.parse_args()
 
-def predict(INP_DIR, BATCH_SIZE, MODEL_PATH):
+def predict(INP_DIR, BATCH_SIZE, NUMS_CLASS, MODEL_NAME, MODEL_PATH, OUT_DIR):
     print("[INFO] Predicting")
     setup_default_logging()
     args = parser.parse_args()
     # might as well try to do something useful...
 
-    args.model = 'tf_efficientnet_b6'
-    args.data = INP_DIR
-    args.num_classes = 4
-    args.checkpoint = MODEL_PATH
-    args.batch_size = BATCH_SIZE
-
-    args.pretrained = args.pretrained or not args.checkpoint
+    args.pretrained = args.pretrained or not MODEL_PATH
     
     # create model
     model = create_model(
-        args.model,
-        num_classes=args.num_classes,
+        MODEL_NAME,
+        num_classes=NUMS_CLASS,
         in_chans=3,
         pretrained=args.pretrained,
-        checkpoint_path=args.checkpoint)
+        checkpoint_path=MODEL_PATH)
 
     _logger.info('Model %s created, param count: %d' %
                  (args.model, sum([m.numel() for m in model.parameters()])))
@@ -85,9 +78,9 @@ def predict(INP_DIR, BATCH_SIZE, MODEL_PATH):
         model = model.cuda()
 
     loader = create_loader(
-        Dataset(args.data),
+        Dataset(INP_DIR),
         input_size=config['input_size'],
-        batch_size=args.batch_size,
+        batch_size=BATCH_SIZE,
         use_prefetcher=True,
         interpolation=config['interpolation'],
         mean=config['mean'],
@@ -133,7 +126,7 @@ def predict(INP_DIR, BATCH_SIZE, MODEL_PATH):
     print("topk_prob: ", topk_prob)
 
     # out_path = os.path.join(args.output_dir, 'submission_{}.txt'.format(args.model))
-    out_path = os.path.join(MAIN_PATH, "output_single_class_stage1.txt")
+    out_path = os.path.join(OUT_DIR, "output_single_class_stage1.txt")
     with open(out_path, 'w') as out_file:
         filenames = loader.dataset.filenames(basename=True)
         for filename, label, prob in zip(filenames, topk_ids, topk_prob):
@@ -148,4 +141,4 @@ def predict(INP_DIR, BATCH_SIZE, MODEL_PATH):
     # return topk_ids
 
 if __name__ == '__main__':
-    predict(INPUT_PATH, 8, )
+    predict(args.data, args.batch_size, args.num_classes, args.model, args.output_dir)
