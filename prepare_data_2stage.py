@@ -241,10 +241,10 @@ class CreateDataset(object):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Prepare dataset two stage')
-    parser.add_argument("--whitelist", type=str, default=None, help="White list of classes (Example: 1,2,3,4).")
-    parser.add_argument("--dataset_name", type=str, default=None, help="Name of dataset.")
-    parser.add_argument("--bb_type", "-b", type=str, default=None, help="Convert bounding box to COCO or YOLO format. (Example: COCO)")
-    parser.add_argument("--class_options", "-c", type=int, default=0, help="Choose 1 to generate single class data and choose 2 to generate multi class data.")
+    parser.add_argument("--whitelist", metavar="-w", type=str, required=True, default=None, help="White list of classes (Example: 1,2,3,4).")
+    parser.add_argument("--dataset_name", metavar="-d", type=str, required=True, default=None, help="Name of dataset.")
+    parser.add_argument("--bb_type", metavar="-b", type=str, default=None, required=True, help="Convert bounding box to COCO or YOLO format. (Example: COCO)")
+    parser.add_argument("--class_options", metavar="-c", type=int, required=True, default=0, help="Choose 1 to generate single class data and choose 2 to generate multi class data.")
 
     args = parser.parse_args()
 
